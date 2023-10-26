@@ -67,7 +67,7 @@ class lstm(nn.Module):
         out = self.fc(out[:, -1, :])
         return out
 ```
-### Forth
+### Fourth
 Use **Ts_Train** to 
 * **Train the model**
 * **Load pre-trained weights**
@@ -84,7 +84,14 @@ Ts_Train(model=model, learning_rate=1e-3, num_epochs=50, train_dataloader=td,
 The arguments of Ts_Train are as follows:
 * **log_process**: *whether log the training and testing process as *.csv* files*
 * **save_results**: *whether save the trained model as *.pth* files*
-* **pre_work**: *A function to the model before training process*
+* **pre_work**: *A function to manipulate model before training process. e.g. You can use the **prework** function to load pre_trained weights*
+  
+```python
+def prework(model: nn.Module) -> nn.Module:
+    state_dict = torch.load('lstm_50epochs.pth')
+    model.load_state_dict(state_dict)
+    return model
+```
 
 ***The input and output type of the prework function are only torch.nn.Module!***
 
