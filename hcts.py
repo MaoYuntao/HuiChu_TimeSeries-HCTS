@@ -6,6 +6,16 @@ import torch
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 
+
+def mae(y_pred: torch.Tensor, y_true: torch.Tensor) -> torch.Tensor:
+    e = torch.abs(y_pred-y_true)
+    return torch.mean(e)
+
+def mape(y_pred: torch.Tensor, y_true: torch.Tensor) -> torch.Tensor:
+    e = torch.abs(y_pred-y_true)
+    return torch.mean(e/torch.abs(y_true))
+
+
 def Ts_Dataloader(path, input_time_steps,  output_time_steps, input_idx=None, output_idx=None, transform=None, batch_size=1, shuffle=False):
     dataset = Ts_Dataset(path, input_time_steps, output_time_steps, input_idx, output_idx, transform)
     return DataLoader(dataset=dataset, batch_size=batch_size, shuffle=shuffle)
@@ -54,64 +64,99 @@ class Ts_Dataset(Dataset): #先变换数据，再选取列
 
 def Ts_Train(train_dataloader, model,
                             learning_rate, num_epochs,
-                            validation_dataloader=None, pre_work=None):
+                            validation_dataloader=None, pre_work=None, save_results=False, log_process=False):
     # 定义损失函数和优化器
     print('---------------------开始训练------------------------')
-    criterion = nn.MSELoss()
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    criterion = nn.MSELoss().to(device)
+    model = model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     #执行模型权重预处理设定优化初始化点
     if pre_work:
-        pre_work(model)
+        model = pre_work(model)
     # 存储训练和验证误差
-    train_losses = []
-    validation_losses = []
+    train_losses = []; validation_losses = []
+    validation_mae = []
+    validation_mape= []
     for epoch in range(num_epochs):
         # 训练模型
         model.train()
-        avg_loss = 0.0; tot = 0
+        avg_loss = torch.tensor(data=0.0, device=device)
+        tot = torch.tensor(data=0, device=device)
         for input_data, target_data in train_dataloader:
             optimizer.zero_grad()
+            input_data = input_data.to(device)
+            target_data = target_data.to(device)
             output = model(input_data)
             loss = criterion(output, target_data)
             loss.backward()
             optimizer.step()
             avg_loss += loss.item()
             tot += 1
-        print(f'epoch:{epoch}, train_loss:{round(avg_loss / tot,5)}', end=', ')
-        train_losses.append(avg_loss/tot)
-
+        Mse = (avg_loss / tot).cpu().item()
+        print(f'epoch:{epoch}, train_loss:{round(Mse,5)}', end=', ')
+        train_losses.append(Mse)
         # 验证模型
-        model.eval()
         if validation_dataloader is not None:
+            model.eval()
             with torch.no_grad():
-                avg_loss = 0.0; tot = 0
+                avg_loss = torch.tensor(data=0.0, device=device)
+                tot = torch.tensor(data=0, device=device)
+                avg_mae = torch.tensor(data=0.0, device=device)
+                avg_mape = torch.tensor(data=0.0, device=device)
                 for input_data, target_data in validation_dataloader:
+                    input_data = input_data.to(device)
+                    target_data = target_data.to(device)
                     output = model(input_data)
                     loss = criterion(output, target_data)
                     avg_loss += loss.item()
+                    avg_mae += mae(output, target_data)
+                    avg_mape += mape(output, target_data)
                     tot += 1
-                validation_losses.append(avg_loss/tot)
-                print(f'val_loss:{round(avg_loss / tot,5)}')
+                Mse = (avg_loss / tot).cpu().item()
+                Mae = (avg_mae / tot).cpu().item()
+                Mape = (avg_mape / tot).cpu().item()
+                validation_losses.append(Mse)
+                validation_mae.append(Mae)
+                validation_mape.append(Mape)
+                print(f'val_loss:{round(Mse, 5)}, val_mae:{round(Mae,5)}, val_mape:{round(Mape,5)}')
     print('---------------------训练结束------------------------')
-
+    #抛弃第一个epoch的输出，因为还没有进行任何学习，输出的结果没有意义
+    train_losses = train_losses[1:]; validation_losses = validation_losses[1:]
+    validation_mape= validation_mape[1:]; validation_mae = validation_mae[1:]
+    num_epochs -= 1
     # 绘制训练和验证误差曲线
     fig, axes = plt.subplots(nrows=1,ncols=2)
-    axes[0].plot(np.linspace(1,num_epochs,num_epochs), train_losses, label='Train Loss', color='blue')
+    axes[0].plot(np.linspace(1,num_epochs,num_epochs), train_losses, label='MSE (Train)', color='darkblue')
     if validation_dataloader is not None:
-        axes[0].plot(np.linspace(1,num_epochs,num_epochs), validation_losses, label='Validation Loss', color='orange')
+        axes[0].plot(np.linspace(1,num_epochs,num_epochs), validation_losses, label='MSE (Validation)', color='royalblue')
+        axes[0].plot(np.linspace(1, num_epochs, num_epochs), validation_mae, label='MAE (Validation)', color='lightcoral')
+        axes[0].plot(np.linspace(1, num_epochs, num_epochs), validation_mape, label='MAPE (Validation)', color='goldenrod')
     axes[0].set_xlabel('Epoch')
     axes[0].set_ylabel('Loss')
     axes[0].legend()
-    axes[0].title.set_text('Training and Validation Loss')
+    axes[0].title.set_text('Training and Validation')
 
     axes[1].plot(np.linspace(int(num_epochs*0.8)+1, num_epochs, num_epochs-int(num_epochs*0.8)),
-                    train_losses[int(num_epochs*0.8): num_epochs], label='Train Loss', color='blue')
+                    train_losses[int(num_epochs*0.8): num_epochs], label='MSE (Train)', color='darkblue')
     if validation_dataloader is not None:
         axes[1].plot(np.linspace(int(num_epochs*0.8)+1, num_epochs, num_epochs-int(num_epochs*0.8)),
-                        validation_losses[int(num_epochs*0.8): num_epochs], label='Validation Loss', color='orange')
+                        validation_losses[int(num_epochs*0.8): num_epochs], label='MSE (Validation)', color='royalblue')
+        axes[1].plot(np.linspace(int(num_epochs * 0.8) + 1, num_epochs, num_epochs - int(num_epochs * 0.8)),
+                     validation_mae[int(num_epochs * 0.8): num_epochs], label='MAE (Validation)', color='lightcoral')
+        axes[1].plot(np.linspace(int(num_epochs * 0.8) + 1, num_epochs, num_epochs - int(num_epochs * 0.8)),
+                     validation_mape[int(num_epochs * 0.8): num_epochs], label='MAPE (Validation)', color='goldenrod')
 
     axes[1].set_xlabel('Epoch')
     axes[1].set_ylabel('Loss')
     axes[1].legend()
-    axes[1].title.set_text('Training and Validation Loss in the End')
+    axes[1].title.set_text('Training and Validation in the End')
     plt.show()
+    if save_results:
+        torch.save(model.state_dict(), f'{model.__class__.__name__ }_{num_epochs+1}epochs.pth')
+        print('---------------------模型权重已保存------------------------')
+    if log_process:
+        data = np.array([train_losses,validation_losses,validation_mae,validation_mape]).T
+        data = pd.DataFrame(data=data, columns=['train_losses', 'validation_losses', 'validation_mae', 'validation_mape'])
+        data.to_csv(f'{model.__class__.__name__ }_{num_epochs+1}epochs.csv', index=False)
+        print('---------------------训练记录已保存------------------------')
