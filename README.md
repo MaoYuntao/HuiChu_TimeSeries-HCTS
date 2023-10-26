@@ -3,6 +3,8 @@ A Time Series Library Written by Python for commemorating Huichu.
 
 In order to train and test my own time series model more conveniently, and at the same time to exercise my coding skills, this library only encapsulates the parts of dataset generation and model training and testing.
 
+![Figure_1](https://github.com/MaoYuntao/HuiChu_TimeSeries-HCTS/assets/40512510/281a58e4-94d6-4e2b-a36d-dd1158fc0b55)
+
 **You can put your model into a training and testing function called Ts_Train only if the model is based on torch.nn.Module.**
 
 Use **Ts_Train** to 
