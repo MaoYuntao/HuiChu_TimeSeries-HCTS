@@ -87,6 +87,7 @@ The arguments of Ts_Train are as follows:
 * **log_process**: *whether log the training and testing process as *.csv* files*
 * **save_results**: *whether save the trained model as *.pth* files*
 * **pre_work**: *A function to manipulate model before training process. e.g. You can use the **prework** function to load pre_trained weights*
+* **is_show**: *whether visualize the training and validation process*
   
 ```python
 def prework(model: nn.Module) -> nn.Module:
